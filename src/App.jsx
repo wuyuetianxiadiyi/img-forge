@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 
 import { useUpdateCheck } from './useUpdateCheck'
+import Cat from './Cat'
 
 const APP_VERSION = '2.0.0'
 
@@ -535,6 +536,9 @@ function App() {
           </footer>
         </StaggerDiv>
       </main>
+
+      {/* 猫 */}
+      <Cat status={loading ? 'converting' : result ? 'done' : 'idle'} />
 
       {/* CSS 动画 keyframes */}
       <style>{`
