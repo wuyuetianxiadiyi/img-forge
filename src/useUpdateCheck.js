@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 
 // version.json 地址（GitHub raw，国内可用 ghproxy 加速）
-const UPDATE_URL = 'https://raw.githubusercontent.com/wuyuetianxiadiyi/img-forge/main/version.json'
+const UPDATE_URL = 'https://raw.githubusercontent.com/wuyuetianxiadiyi/img-forge/master/version.json'
 
 // 语义版本号比较
 function semverCompare(a, b) {
