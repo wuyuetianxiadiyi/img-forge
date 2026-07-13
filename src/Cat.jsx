@@ -1,14 +1,38 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+
+// 音效（预加载）
+const sounds = {
+  catUp: [new Audio('/audio/cat/catup-01.wav'), new Audio('/audio/cat/catup-02.wav'), new Audio('/audio/cat/catup-03.wav')],
+  catDown: [new Audio('/audio/cat/catdown-01.wav'), new Audio('/audio/cat/catdown-02.wav'), new Audio('/audio/cat/catdown-03.wav')],
+  complete: new Audio('/audio/cat/complete.wav'),
+}
+
+function playRandom(arr) {
+  const s = arr[Math.floor(Math.random() * arr.length)]
+  s.currentTime = 0
+  s.play().catch(() => {}) // 忽略浏览器自动播放限制
+}
 
 export default function Cat({ status }) {
   const [excited, setExcited] = useState(false)
   const [mouthOpen, setMouthOpen] = useState(false)
   const [clickCount, setClickCount] = useState(0)
   const timeoutRef = useRef(null)
+  const prevStatus = useRef(status)
 
   // 根据 App 状态自动反应
   const isWorking = status === 'converting'
   const isDone = status === 'done'
+
+  // 转换完成 → 播完成音效 + 弹跳
+  useEffect(() => {
+    if (prevStatus.current === 'converting' && status === 'done') {
+      playRandom(sounds.catUp)
+      sounds.complete.currentTime = 0
+      sounds.complete.play().catch(() => {})
+    }
+    prevStatus.current = status
+  }, [status])
 
   return (
     <div
@@ -16,10 +40,13 @@ export default function Cat({ status }) {
       style={{ pointerEvents: 'auto' }}
       onMouseEnter={() => {
         setExcited(true)
-        // 播放猫叫声的逻辑占位
+        playRandom(sounds.catUp)  // 猫站起来叫一声
       }}
       onMouseLeave={() => {
-        if (!mouthOpen) setExcited(false)
+        if (!mouthOpen) {
+          setExcited(false)
+          playRandom(sounds.catDown)  // 猫坐下去叫一声
+        }
       }}
     >
       {/* 绳子 */}
