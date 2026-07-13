@@ -8,6 +8,10 @@ import {
   FileImage, RotateCcw, Zap, ShieldCheck, Layers
 } from 'lucide-react'
 
+import { useUpdateCheck } from './useUpdateCheck'
+
+const APP_VERSION = '2.0.0'
+
 const FORMATS = [
   { id: 'PNG', label: 'PNG', desc: '无损', mime: 'image/png' },
   { id: 'JPG', label: 'JPG', desc: '通用', mime: 'image/jpeg' },
@@ -17,6 +21,9 @@ const FORMATS = [
 
 const MIME_MAP = { PNG: 'image/png', JPG: 'image/jpeg', WebP: 'image/webp', BMP: 'image/bmp' }
 const EXT_MAP = { PNG: 'png', JPG: 'jpg', WebP: 'webp', BMP: 'bmp' }
+
+// 移动端检测
+const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window)
 
 // 浏览器端图片转换（不需要 Python 后端）
 function convertImage(file, format, quality) {
@@ -57,6 +64,8 @@ function App() {
   const [error, setError] = useState(null)
   const [dragging, setDragging] = useState(false)
 
+  const { update, checking, error: updateErr, check: checkUpdate } = useUpdateCheck(APP_VERSION)
+
   const fileRef = useRef(null)
   const cursorDot = useRef(null)
   const cursorRing = useRef(null)
@@ -65,52 +74,78 @@ function App() {
   const orb1 = useRef(null)
   const orb2 = useRef(null)
 
-  // 自定义光标
+  // 自定义光标 + 平滑动画（桌面鼠标 / 移动端触摸跟随）
   useEffect(() => {
     const dot = cursorDot.current
     const ring = cursorRing.current
     if (!dot || !ring) return
-    let mx = 0, my = 0, rx = 0, ry = 0
+    let mx = 0, my = 0, rx = 0, ry = 0, running = true
 
-    const onMove = (e) => { mx = e.clientX; my = e.clientY }
-    document.addEventListener('mousemove', onMove)
+    if (isMobile) {
+      // 移动端：默认隐藏，触摸时显示跟随
+      ring.style.opacity = '0'
+      ring.style.transition = 'opacity .35s ease, width .3s, height .3s, border-color .3s'
+      dot.style.display = 'none'
+
+      const onStart = (e) => {
+        const t = e.touches[0]; mx = t.clientX; my = t.clientY
+        rx = mx; ry = my
+        ring.style.opacity = '1'
+        ring.style.left = rx + 'px'
+        ring.style.top = ry + 'px'
+      }
+      const onMove = (e) => {
+        const t = e.touches[0]; mx = t.clientX; my = t.clientY
+      }
+      const onEnd = () => { ring.style.opacity = '0' }
+
+      document.addEventListener('touchstart', onStart, { passive: true })
+      document.addEventListener('touchmove', onMove, { passive: true })
+      document.addEventListener('touchend', onEnd, { passive: true })
+    } else {
+      // 桌面端：鼠标跟随
+      const onMove = (e) => { mx = e.clientX; my = e.clientY }
+      document.addEventListener('mousemove', onMove)
+
+      const els = document.querySelectorAll('a, button, input, .format-chip, .drop-zone')
+      const addH = () => ring.classList.add('hover')
+      const rmH = () => ring.classList.remove('hover')
+      els.forEach(el => { el.addEventListener('mouseenter', addH); el.addEventListener('mouseleave', rmH) })
+    }
 
     const smooth = () => {
-      rx += (mx - rx) * 0.12
-      ry += (my - ry) * 0.12
-      ring.style.left = rx + 'px'
-      ring.style.top = ry + 'px'
-      dot.style.left = mx + 'px'
-      dot.style.top = my + 'px'
+      if (!running) return
+      const ease = isMobile ? 0.18 : 0.12
+      rx += (mx - rx) * ease; ry += (my - ry) * ease
+      ring.style.left = rx + 'px'; ring.style.top = ry + 'px'
+      if (!isMobile) { dot.style.left = mx + 'px'; dot.style.top = my + 'px' }
       requestAnimationFrame(smooth)
     }
     smooth()
 
-    const els = document.querySelectorAll('a, button, input, .format-chip, .drop-zone')
-    const addH = () => ring.classList.add('hover')
-    const rmH = () => ring.classList.remove('hover')
-    els.forEach(el => { el.addEventListener('mouseenter', addH); el.addEventListener('mouseleave', rmH) })
-
-    return () => {
-      document.removeEventListener('mousemove', onMove)
-      els.forEach(el => { el.removeEventListener('mouseenter', addH); el.removeEventListener('mouseleave', rmH) })
-    }
+    return () => { running = false }
   }, [])
 
-  // 3D 倾斜 + 光晕跟随
+  // 3D 倾斜 + 光晕跟随（桌面鼠标 + 移动端触摸）
   useEffect(() => {
     const card = tiltRef.current
     const inner = tiltInner.current
     const o1 = orb1.current, o2 = orb2.current
     if (!card || !inner) return
 
-    const onMove = (e) => {
-      const rect = card.getBoundingClientRect()
-      const x = (e.clientX - rect.left) / rect.width - 0.5
-      const y = (e.clientY - rect.top) / rect.height - 0.5
-      inner.style.transform = `rotateX(${y * -6}deg) rotateY(${x * 6}deg)`
+    const getXY = (e) => {
+      if (e.touches) return { x: e.touches[0].clientX, y: e.touches[0].clientY }
+      return { x: e.clientX, y: e.clientY }
+    }
 
-      const wx = e.clientX / window.innerWidth, wy = e.clientY / window.innerHeight
+    const onMove = (e) => {
+      const { x, y } = getXY(e)
+      const rect = card.getBoundingClientRect()
+      const cx = (x - rect.left) / rect.width - 0.5
+      const cy = (y - rect.top) / rect.height - 0.5
+      inner.style.transform = `rotateX(${cy * -6}deg) rotateY(${cx * 6}deg)`
+
+      const wx = x / window.innerWidth, wy = y / window.innerHeight
       if (o1) o1.style.transform = `translate(${wx * 40}px, ${wy * 40}px)`
       if (o2) o2.style.transform = `translate(${wx * -30}px, ${wy * -30}px)`
     }
@@ -118,7 +153,17 @@ function App() {
 
     card.addEventListener('mousemove', onMove)
     card.addEventListener('mouseleave', onLeave)
-    return () => { card.removeEventListener('mousemove', onMove); card.removeEventListener('mouseleave', onLeave) }
+    // 移动端触摸倾斜
+    if (isMobile) {
+      card.addEventListener('touchmove', onMove, { passive: true })
+      card.addEventListener('touchend', onLeave)
+    }
+    return () => {
+      card.removeEventListener('mousemove', onMove)
+      card.removeEventListener('mouseleave', onLeave)
+      card.removeEventListener('touchmove', onMove)
+      card.removeEventListener('touchend', onLeave)
+    }
   }, [])
 
   const handleFile = useCallback((f) => {
@@ -171,7 +216,7 @@ function App() {
   return (
     <div className="dark relative min-h-screen bg-[#020617] text-foreground overflow-hidden font-sans selection:bg-cyber-500/30">
 
-      {/* 自定义光标 */}
+      {/* 自定义光标（桌面+移动端触摸跟随） */}
       <div ref={cursorDot} className="fixed w-2 h-2 bg-cyber-400 rounded-full pointer-events-none z-[99999] mix-blend-difference"
         style={{ transform: 'translate(-50%,-50%)', transition: 'width .15s,height .15s' }} />
       <div ref={cursorRing} className="fixed w-9 h-9 rounded-full pointer-events-none z-[99998]"
@@ -207,11 +252,11 @@ function App() {
       <div ref={orb2} className="fixed -bottom-32 -right-32 w-[500px] h-[500px] bg-purple-600/8 rounded-full blur-[100px] pointer-events-none z-0 transition-transform duration-300 ease-out" />
       <div className="fixed top-1/3 left-1/2 w-[400px] h-[400px] bg-pink-600/5 rounded-full blur-[100px] pointer-events-none z-0" />
 
-      {/* ===== 导航 ===== */}
+      {/* ===== 导航（含窗口控制） ===== */}
       <header className="fixed top-0 inset-x-0 z-50 border-b border-white/[.03]"
-        style={{ background: 'rgba(2,6,23,.75)', backdropFilter: 'blur(24px)' }}>
+        style={{ background: 'rgba(2,6,23,.75)', backdropFilter: 'blur(24px)', WebkitAppRegion: 'drag' }}>
         <div className="max-w-4xl mx-auto px-6 h-14 flex items-center justify-between">
-          <StaggerDiv delay={0.05} className="flex items-center gap-3">
+          <StaggerDiv delay={0.05} className="flex items-center gap-3" style={{ WebkitAppRegion: 'no-drag' }}>
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyber-500 to-purple-600 flex items-center justify-center text-xs font-bold shadow-lg shadow-cyber-500/20">IF</div>
             <span className="font-semibold text-sm tracking-tight">ImageForge</span>
             <span className="hidden sm:inline text-[10px] font-medium px-2 py-0.5 rounded-full bg-white/[.04] text-white/30 tracking-widest">v2.0</span>
@@ -223,6 +268,36 @@ function App() {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/70 animate-pulse" />
               Ready
             </span>
+            {/* 更新检查 */}
+            {update && (
+              <button onClick={() => {
+                const a = document.createElement('a')
+                a.href = update.apkUrl
+                a.target = '_blank'
+                a.click()
+              }}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] hover:bg-emerald-500/20 transition-colors whitespace-nowrap">
+                <Download className="w-3 h-3" /> v{update.version}
+              </button>
+            )}
+            {checking && (
+              <span className="text-[10px] text-white/20">检查中...</span>
+            )}
+            {/* 窗口控制按钮（仅桌面） */}
+            {!isMobile && <span className="flex items-center gap-1 ml-2" style={{ WebkitAppRegion: 'no-drag' }}>
+              <button onClick={() => window.electronAPI?.minimize()}
+                className="w-7 h-7 rounded-md hover:bg-white/[.08] flex items-center justify-center transition-colors">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
+              </button>
+              <button onClick={() => window.electronAPI?.maximize()}
+                className="w-7 h-7 rounded-md hover:bg-white/[.08] flex items-center justify-center transition-colors">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V6a2 2 0 012-2h12a2 2 0 012 2v2M4 8v10a2 2 0 002 2h12a2 2 0 002-2V8M4 8h16" /></svg>
+              </button>
+              <button onClick={() => window.electronAPI?.close()}
+                className="w-7 h-7 rounded-md hover:bg-red-500/20 hover:text-red-400 flex items-center justify-center transition-colors">
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </span>}
           </StaggerDiv>
         </div>
       </header>
